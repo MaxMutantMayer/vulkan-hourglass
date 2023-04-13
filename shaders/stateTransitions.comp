@@ -1,0 +1,306 @@
+// The 2x2 cell blocks are represented as the lower 8 bits of an unsigned interger.
+//
+// The bits represent the following:
+//
+// 0000 0001 - top left is sand
+// 0000 0010 - top right is sand
+// 0000 0100 - bottom left is sand
+// 0000 1000 - bottom right is sand
+// 0001 0000 - top left is a wall
+// 0010 0000 - top right is a wall
+// 0100 0000 - bottom left is a wall
+// 1000 0000 - bottom right is a wall
+//
+// Although this representation would allow a single cell to be sand and wall at
+// the same time, this should never be the case when using the generation methods
+// and only this transition table to modify states.
+
+const uint stateTransition[256] = uint[](
+    // No walls
+    0,  // OOOO -> OOOO
+    4,  // XOOO -> OOXO
+    8,  // OXOO -> OOOX
+    12, // XXOO -> OOXX || XXOO (NOTE(MM): special case, get stuck with probability)
+    4,  // OOXO -> OOXO
+    12, // XOXO -> OOXX
+    12, // OXXO -> OOXX
+    13, // XXXO -> XOXX
+    8,  // OOOX -> OOOX
+    12, // XOOX -> OOXX
+    12, // OXOX -> OOXX
+    14, // XXOX -> OXXX
+    12, // OOXX -> OOXX
+    13, // XOXX -> XOXX
+    14, // OXXX -> OXXX
+    15, // XXXX -> XXXX
+
+    // top-left wall
+    0,  // WOOO -> WOOO
+    0,  // WOOO -> WOOO
+    8,  // WXOO -> WOOX
+    8,  // WXOO -> WOOX
+    4,  // WOXO -> WOXO
+    4,  // WOXO -> WOXO
+    12, // WXXO -> WOXX
+    12, // WXXO -> WOXX
+    8,  // WOOX -> WOOX
+    8,  // WOOX -> WOOX
+    12, // WXOX -> WOXX
+    12, // WXOX -> WOXX
+    12, // WOXX -> WOXX
+    12, // WOXX -> WOXX
+    14, // WXXX -> WXXX
+    14, // WXXX -> WXXX
+
+    // top-right wall
+    0,  // OWOO -> OWOO
+    4,  // XWOO -> OWXO
+    0,  // OWOO -> OWOO
+    4,  // XWOO -> OWXO
+    4,  // OWXO -> OWXO
+    12, // XWXO -> OWXX
+    4,  // OWXO -> OWXO
+    12, // XWXO -> OWXX
+    8,  // OWOX -> OWOX
+    12, // XWOX -> OWXX
+    8,  // OWOX -> OWOX
+    12, // XWOX -> OWXX
+    12, // OWXX -> OWXX
+    13, // XWXX -> XWXX
+    12, // OWXX -> OWXX
+    13, // XWXX -> XWXX
+
+    // top wall
+    0,  // WWOO -> WWOO
+    0,  // WWOO -> WWOO
+    0,  // WWOO -> WWOO
+    0,  // WWOO -> WWOO
+    4,  // WWXO -> WWXO
+    4,  // WWXO -> WWXO
+    4,  // WWXO -> WWXO
+    4,  // WWXO -> WWXO
+    8,  // WWOX -> WWOX
+    8,  // WWOX -> WWOX
+    8,  // WWOX -> WWOX
+    8,  // WWOX -> WWOX
+    12, // WWXX -> WWXX
+    12, // WWXX -> WWXX
+    12, // WWXX -> WWXX
+    12, // WWXX -> WWXX
+
+    // bottom-left wall
+    0,  // OOWO -> OOWO
+    8,  // XOWO -> OOWX
+    8,  // OXWO -> OOWX
+    9,  // XXWO -> XOWX
+    0,  // OOWO -> OOWO
+    8,  // XOWO -> OOWX
+    8,  // OXWO -> OOWX
+    9,  // XXWO -> XOWX
+    8,  // OOWX -> OOWX
+    9,  // XOWX -> XOWX
+    9,  // OXWX -> XOWX
+    11, // XXWX -> XXWX
+    8,  // OOWX -> OOWX
+    9,  // XOWX -> XOWX
+    9,  // OXWX -> XOWX
+    11, // XXWX -> XXWX
+
+    // left wall
+    0,  // WOWO -> WOWO
+    0,  // WOWO -> WOWO
+    8,  // WXWO -> WOWX
+    8,  // WXWO -> WOWX
+    0,  // WOWO -> WOWO
+    0,  // WOWO -> WOWO
+    8,  // WXWO -> WOWX
+    8,  // WXWO -> WOWX
+    8,  // WOWX -> WOWX
+    8,  // WOWX -> WOWX
+    10, // WXWX -> WXWX
+    10, // WXWX -> WXWX
+    8,  // WOWX -> WOWX
+    8,  // WOWX -> WOWX
+    10, // WXWX -> WXWX
+    10, // WXWX -> WXWX
+
+    // bottom-left and top-right wall
+    0,  // OWWO -> OWWO
+    1,  // XWWO -> XWWO
+    0,  // OWWO -> OWWO
+    1,  // XWWO -> XWWO
+    0,  // OWWO -> OWWO
+    1,  // XWWO -> XWWO
+    0,  // OWWO -> OWWO
+    1,  // XWWO -> XWWO
+    8,  // OWWX -> OWWX
+    9,  // XWWX -> XWWX
+    8,  // OWWX -> OWWX
+    9,  // XWWX -> XWWX
+    8,  // OWWX -> OWWX
+    9,  // XWWX -> XWWX
+    8,  // OWWX -> OWWX
+    9,  // XWWX -> XWWX
+
+    // left and top wall
+    0,  // WWWO -> WWWO
+    0,  // WWWO -> WWWO
+    0,  // WWWO -> WWWO
+    0,  // WWWO -> WWWO
+    0,  // WWWO -> WWWO
+    0,  // WWWO -> WWWO
+    0,  // WWWO -> WWWO
+    0,  // WWWO -> WWWO
+    8,  // WWWX -> WWWX
+    8,  // WWWX -> WWWX
+    8,  // WWWX -> WWWX
+    8,  // WWWX -> WWWX
+    8,  // WWWX -> WWWX
+    8,  // WWWX -> WWWX
+    8,  // WWWX -> WWWX
+    8,  // WWWX -> WWWX
+
+    // bottom-right wall
+    0,  // OOOW -> OOOW
+    4,  // XOOW -> OOXW
+    4,  // OXOW -> OOXW
+    6,  // XXOW -> OXXW
+    4,  // OOXW -> OOXW
+    6,  // XOXW -> OXXW
+    6,  // OXXW -> OXXW
+    7,  // XXXW -> XXXW
+    0,  // OOOW -> OOOW
+    4,  // XOOW -> OOXW
+    4,  // OXOW -> OOXW
+    6,  // XXOW -> OXXW
+    4,  // OOXW -> OOXW
+    6,  // XOXW -> OXXW
+    6,  // OXXW -> OXXW
+    7,  // XXXW -> XXXW
+
+    // bottom-right and top-left wall
+    0,  // WOOW -> WOOW
+    0,  // WOOW -> WOOW
+    2,  // WXOW -> WXOW
+    2,  // WXOW -> WXOW
+    4,  // WOXW -> WOXW
+    4,  // WOXW -> WOXW
+    6,  // WXXW -> WXXW
+    6,  // WXXW -> WXXW
+    0,  // WOOW -> WOOW
+    0,  // WOOW -> WOOW
+    2,  // WXOW -> WXOW
+    2,  // WXOW -> WXOW
+    4,  // WOXW -> WOXW
+    4,  // WOXW -> WOXW
+    6,  // WXXW -> WXXW
+    6,  // WXXW -> WXXW
+
+    // right wall
+    0,  // OWOW -> OWOW
+    4,  // XWOW -> OWXW
+    0,  // OWOW -> OWOW
+    4,  // XWOW -> OWXW
+    4,  // OWXW -> OWXW
+    5,  // XWXW -> XWXW
+    4,  // OWXW -> OWXW
+    5,  // XWXW -> XWXW
+    0,  // OWOW -> OWOW
+    4,  // XWOW -> OWXW
+    0,  // OWOW -> OWOW
+    4,  // XWOW -> OWXW
+    4,  // OWXW -> OWXW
+    5,  // XWXW -> XWXW
+    4,  // OWXW -> OWXW
+    5,  // XWXW -> XWXW
+
+    // bottom-right and top wall
+    0,  // WWOW -> WWOW
+    0,  // WWOW -> WWOW
+    0,  // WWOW -> WWOW
+    0,  // WWOW -> WWOW
+    4,  // WWXW -> WWXW
+    4,  // WWXW -> WWXW
+    4,  // WWXW -> WWXW
+    4,  // WWXW -> WWXW
+    0,  // WWOW -> WWOW
+    0,  // WWOW -> WWOW
+    0,  // WWOW -> WWOW
+    0,  // WWOW -> WWOW
+    4,  // WWXW -> WWXW
+    4,  // WWXW -> WWXW
+    4,  // WWXW -> WWXW
+    4,  // WWXW -> WWXW
+
+    // bottom wall
+    0,  // OOWW -> OOWW
+    1,  // XOWW -> XOWW
+    2,  // OXWW -> OXWW
+    3,  // XXWW -> XXWW
+    0,  // OOWW -> OOWW
+    1,  // XOWW -> XOWW
+    2,  // OXWW -> OXWW
+    3,  // XXWW -> XXWW
+    0,  // OOWW -> OOWW
+    1,  // XOWW -> XOWW
+    2,  // OXWW -> OXWW
+    3,  // XXWW -> XXWW
+    0,  // OOWW -> OOWW
+    1,  // XOWW -> XOWW
+    2,  // OXWW -> OXWW
+    3,  // XXWW -> XXWW
+
+    // bottom and top-left wall
+    0,  // WOWW -> WOWW
+    0,  // WOWW -> WOWW
+    2,  // WXWW -> WXWW
+    2,  // WXWW -> WXWW
+    0,  // WOWW -> WOWW
+    0,  // WOWW -> WOWW
+    2,  // WXWW -> WXWW
+    2,  // WXWW -> WXWW
+    0,  // WOWW -> WOWW
+    0,  // WOWW -> WOWW
+    2,  // WXWW -> WXWW
+    2,  // WXWW -> WXWW
+    0,  // WOWW -> WOWW
+    0,  // WOWW -> WOWW
+    2,  // WXWW -> WXWW
+    2,  // WXWW -> WXWW
+
+    // bottom and top-right wall
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+    0,  // OWWW -> OWWW
+    1,  // XWWW -> XWWW
+
+    // full wall
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0,  // WWWW -> WWWW
+    0   // WWWW -> WWWW
+);

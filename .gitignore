@@ -1,0 +1,7 @@
+.cache/
+.ccls-cache/
+.envrc
+.idea/
+bin/
+build/
+compile_commands.json

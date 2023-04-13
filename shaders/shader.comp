@@ -1,0 +1,117 @@
+#version 450
+
+#include "hash.comp"
+#include "stateTransitions.comp"
+
+// NOTE(MM): X is specialized via constant below (id = 0).
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(local_size_x_id = 0) in;
+layout(constant_id = 1) const uint GRID_WIDTH = 64;
+layout(constant_id = 2) const uint GRID_HEIGHT = 64;
+layout(constant_id = 3) const uint ENABLE_HORIZONTAL_WRAPPING = 0;
+layout(constant_id = 4) const float STUCK_PROBABILITY = 0.0f;
+
+layout(std430, binding = 0) readonly buffer CellsSSBOIn
+{
+    uint cellsIn[];
+};
+
+layout(std430, binding = 1) writeonly buffer CellsSSBOOut
+{
+    uint cellsOut[];
+};
+
+layout(push_constant) uniform PushConstants
+{
+    uint cellOffsetX;
+    int seed;
+}
+constants;
+
+const uint MAX_IDX = GRID_WIDTH * GRID_HEIGHT;
+const uint RANDOM_CASE_VAL = 3;
+
+void main()
+{
+    // NOTE(MM): Some weirdness here.
+    // First step is to get current start index of cell. Since we are working
+    // with 2x2 cells, we skip every 2nd cell on the x-axis.
+    uint index = gl_GlobalInvocationID.x * 2;
+
+    // Next, we want to take into account that every 2nd iteration will have
+    // an offset on the x and the y axis.
+    index = index + constants.cellOffsetX + (constants.cellOffsetX * GRID_WIDTH);
+
+    // Finally, we need to make sure to skip every 2nd row. We do this by
+    // simply making use of integer truncation. Without the last part
+    // 'CellOffset.x * WIDTH', that would mean we skip every *odd* row
+    // for the start index. However, if we use the cell offset we want to
+    // skip every even row, hence we subtract the additional unwanted jump
+    // again.
+    index = index + (index / GRID_WIDTH) * GRID_WIDTH - constants.cellOffsetX * GRID_WIDTH;
+
+    uint tl = index;
+    uint tr = index + 1;
+    uint bl = index + GRID_WIDTH;
+    uint br = index + GRID_WIDTH + 1;
+
+    bool wrappedHorizontally = (tr % GRID_WIDTH) == 0;
+    bool isOutOfBounds = false;
+    if (wrappedHorizontally)
+    {
+        if (ENABLE_HORIZONTAL_WRAPPING > 0)
+        {
+            tr = tr + GRID_WIDTH;
+            br = br + GRID_WIDTH;
+        }
+        else
+        {
+            isOutOfBounds = true;
+        }
+    }
+
+    isOutOfBounds = isOutOfBounds || br >= MAX_IDX;
+    if (isOutOfBounds)
+    {
+        cellsOut[tl] = cellsIn[tl];
+        cellsOut[tr] = cellsIn[tr];
+        cellsOut[bl] = cellsIn[bl];
+        cellsOut[br] = cellsIn[br];
+
+        return;
+    }
+
+    // See 'stateTransitions.comp' for state representation in bits.
+    uint val = (cellsIn[tl] & 1);
+    val = val | (cellsIn[tr] & 1) << 1;
+    val = val | (cellsIn[bl] & 1) << 2;
+    val = val | (cellsIn[br] & 1) << 3;
+
+    // Walls are represented as '2' within the grid.
+    val = val | (cellsIn[tl] & 2) << 3;
+    val = val | (cellsIn[tr] & 2) << 4;
+    val = val | (cellsIn[bl] & 2) << 5;
+    val = val | (cellsIn[br] & 2) << 6;
+
+    uint newState = stateTransition[val];
+
+    // Sand gets stuck with speficied probability in special case
+    // -> sand in top row and empty bottom row.
+    if (val == RANDOM_CASE_VAL)
+    {
+        float r = hash1(constants.seed + gl_GlobalInvocationID.x);
+        if (r < STUCK_PROBABILITY)
+        {
+            newState = RANDOM_CASE_VAL;
+        }
+    }
+
+    // If state transitions returns 1 for a cell and there was
+    // a wall in the input, the output would be 3. However, this
+    // should never happen.
+    cellsOut[tl] = ((newState & 1)) | (cellsIn[tl] & 2);
+    cellsOut[tr] = ((newState & 2) >> 1) | (cellsIn[tr] & 2);
+    cellsOut[bl] = ((newState & 4) >> 2) | (cellsIn[bl] & 2);
+    cellsOut[br] = ((newState & 8) >> 3) | (cellsIn[br] & 2);
+}
