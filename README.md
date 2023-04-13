@@ -27,7 +27,7 @@ texture for fullscreen quad rendering). The block size of the cells is 2x2 and
 -   [shaderc](https://github.com/google/shaderc) (glslc for shader compilation)
 -   [glfw](https://github.com/glfw/glfw)
 -   GPU with graphics/compute and present capabilities (+ support for
-    'VK<sub>KHR</sub><sub>surface</sub>' and your platforms 'VK<sub>KHR</sub><sub>\*</sub><sub>surface</sub>' extension)
+    `VK_KHR_surface` and your platforms `VK_KHR_*_surface` extension)
 
 Example installation with OpenSUSE:
 
